@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireOrganization } from './auth'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function getOrganizationUsers() {
   const { organization, membership } = await requireOrganization()
@@ -51,7 +51,7 @@ export async function createUser(data: {
   }
 
   try {
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     // Create the user in Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
