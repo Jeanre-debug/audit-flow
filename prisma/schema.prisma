@@ -1,0 +1,532 @@
+// AuditFlow - Digital Food Safety & Compliance Management Platform
+// Full database schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// ORGANIZATIONS & USERS
+// ============================================
+
+model Organization {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  logo             String?
+  primaryColor     String?  @default("#2563eb")
+  subscriptionTier String   @default("free") // free, starter, professional, enterprise
+  subscriptionId   String?  // Stripe subscription ID
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  members            OrganizationMember[]
+  invitations        Invitation[]
+  sites              Site[]
+  assets             Asset[]
+  auditTemplates     AuditTemplate[]
+  audits             Audit[]
+  issues             Issue[]
+  logTemplates       LogTemplate[]
+  logEntries         LogEntry[]
+  notifications      Notification[]
+
+  @@map("organizations")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  avatarUrl     String?
+  phone         String?
+  timezone      String    @default("UTC")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+
+  // Supabase Auth ID - links to auth.users
+  authId        String    @unique
+
+  // Relations
+  memberships            OrganizationMember[]
+  invitationsSent        Invitation[]         @relation("InvitationSender")
+  auditsPerformed        Audit[]              @relation("AuditAuditor")
+  auditsReviewed         Audit[]              @relation("AuditReviewer")
+  issuesCreated          Issue[]              @relation("IssueCreator")
+  issuesAssigned         Issue[]              @relation("IssueAssignee")
+  issueComments          IssueComment[]
+  logEntriesCreated      LogEntry[]
+  notificationPreferences NotificationPreference[]
+  notifications          Notification[]
+
+  @@map("users")
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           String   @default("member") // owner, admin, manager, member, viewer
+  jobTitle       String?
+  department     String?
+  isActive       Boolean  @default(true)
+  joinedAt       DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@map("organization_members")
+}
+
+model Invitation {
+  id             String    @id @default(cuid())
+  organizationId String
+  email          String
+  role           String    @default("member")
+  token          String    @unique @default(cuid())
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  invitedById    String
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InvitationSender", fields: [invitedById], references: [id])
+
+  @@map("invitations")
+}
+
+// ============================================
+// SITES & ASSETS
+// ============================================
+
+model Site {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  address        String?
+  city           String?
+  state          String?
+  postalCode     String?
+  country        String?
+  latitude       Float?
+  longitude      Float?
+  phone          String?
+  email          String?
+  managerId      String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assets       Asset[]
+  audits       Audit[]
+  logEntries   LogEntry[]
+  issues       Issue[]
+
+  @@map("sites")
+}
+
+model Asset {
+  id               String    @id @default(cuid())
+  organizationId   String
+  siteId           String?
+  name             String
+  type             String    // refrigerator, freezer, thermometer, oven, etc.
+  manufacturer     String?
+  model            String?
+  serialNumber     String?
+  purchaseDate     DateTime?
+  warrantyExpiry   DateTime?
+  lastCalibration  DateTime?
+  nextCalibration  DateTime?
+  status           String    @default("active") // active, maintenance, retired
+  minTemp          Float?    // For temp-monitored assets
+  maxTemp          Float?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site               Site?               @relation(fields: [siteId], references: [id])
+  maintenanceRecords AssetMaintenance[]
+  logReadings        LogReading[]
+
+  @@map("assets")
+}
+
+model AssetMaintenance {
+  id             String    @id @default(cuid())
+  assetId        String
+  type           String    // calibration, repair, cleaning, inspection
+  description    String?
+  performedBy    String?
+  performedAt    DateTime
+  nextDueAt      DateTime?
+  cost           Decimal?  @db.Decimal(10, 2)
+  notes          String?
+  documentUrl    String?
+  createdAt      DateTime  @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_maintenance")
+}
+
+// ============================================
+// AUDIT TEMPLATES & QUESTIONS
+// ============================================
+
+model AuditTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  category       String?  // food-safety, hygiene, fire-safety, haccp, etc.
+  version        Int      @default(1)
+  isActive       Boolean  @default(true)
+  isPublished    Boolean  @default(false)
+  passingScore   Int      @default(80) // Minimum % to pass
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sections     TemplateSection[]
+  audits       Audit[]
+
+  @@map("audit_templates")
+}
+
+model TemplateSection {
+  id         String   @id @default(cuid())
+  templateId String
+  title      String
+  description String?
+  order      Int      @default(0)
+  weight     Int      @default(1) // Scoring weight
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  template  AuditTemplate      @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  questions TemplateQuestion[]
+
+  @@map("template_sections")
+}
+
+model TemplateQuestion {
+  id              String   @id @default(cuid())
+  sectionId       String
+  text            String
+  description     String?
+  type            String   // yes_no, pass_fail, numeric, text, photo, multi_choice, rating
+  isRequired      Boolean  @default(true)
+  isCritical      Boolean  @default(false) // Auto-fail if not passed
+  order           Int      @default(0)
+  weight          Int      @default(1)
+
+  // Type-specific configuration (JSON)
+  config          Json?    // { options: [], min: 0, max: 100, unit: "C", etc. }
+
+  // For numeric questions
+  minValue        Float?
+  maxValue        Float?
+  targetValue     Float?
+  unit            String?
+
+  // For multi-choice
+  options         String[] @default([])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  section   TemplateSection  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  responses AuditResponse[]
+
+  @@map("template_questions")
+}
+
+// ============================================
+// AUDITS & RESPONSES
+// ============================================
+
+model Audit {
+  id             String    @id @default(cuid())
+  organizationId String
+  templateId     String
+  siteId         String
+  auditorId      String
+  reviewerId     String?
+
+  status         String    @default("draft") // draft, in_progress, completed, reviewed, archived
+  title          String?
+  notes          String?
+
+  // Scoring
+  totalScore     Float?
+  maxScore       Float?
+  percentage     Float?
+  passed         Boolean?
+
+  // Signatures
+  auditorSignature   String?   // Base64 or URL
+  auditorSignedAt    DateTime?
+  reviewerSignature  String?
+  reviewerSignedAt   DateTime?
+
+  // Location
+  latitude       Float?
+  longitude      Float?
+
+  startedAt      DateTime?
+  completedAt    DateTime?
+  reviewedAt     DateTime?
+  scheduledFor   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template     AuditTemplate   @relation(fields: [templateId], references: [id])
+  site         Site            @relation(fields: [siteId], references: [id])
+  auditor      User            @relation("AuditAuditor", fields: [auditorId], references: [id])
+  reviewer     User?           @relation("AuditReviewer", fields: [reviewerId], references: [id])
+  responses    AuditResponse[]
+  issues       Issue[]
+
+  @@map("audits")
+}
+
+model AuditResponse {
+  id           String   @id @default(cuid())
+  auditId      String
+  questionId   String
+
+  // Response data (varies by question type)
+  value        String?  // Text, numeric value as string, selected option
+  boolValue    Boolean? // For yes/no, pass/fail
+  numericValue Float?   // For numeric questions
+
+  // Scoring
+  score        Float?
+  maxScore     Float?
+  passed       Boolean?
+
+  notes        String?
+  flagged      Boolean  @default(false)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  audit    Audit             @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  question TemplateQuestion  @relation(fields: [questionId], references: [id])
+  media    AuditMedia[]
+
+  @@unique([auditId, questionId])
+  @@map("audit_responses")
+}
+
+model AuditMedia {
+  id          String   @id @default(cuid())
+  responseId  String
+  type        String   // photo, document
+  url         String
+  filename    String?
+  mimeType    String?
+  size        Int?
+  caption     String?
+  annotations Json?    // For image annotations
+  latitude    Float?
+  longitude   Float?
+  takenAt     DateTime?
+  createdAt   DateTime @default(now())
+
+  response AuditResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@map("audit_media")
+}
+
+// ============================================
+// ISSUES & CORRECTIVE ACTIONS
+// ============================================
+
+model Issue {
+  id             String    @id @default(cuid())
+  organizationId String
+  siteId         String?
+  auditId        String?
+
+  title          String
+  description    String?
+  type           String    @default("non_conformance") // non_conformance, observation, recommendation
+  priority       String    @default("medium") // low, medium, high, critical
+  status         String    @default("open") // open, in_progress, resolved, verified, closed
+
+  createdById    String
+  assignedToId   String?
+
+  dueDate        DateTime?
+  resolvedAt     DateTime?
+  verifiedAt     DateTime?
+  closedAt       DateTime?
+
+  // Resolution
+  resolution     String?
+  rootCause      String?
+  preventiveAction String?
+
+  // Escalation
+  escalationLevel Int      @default(0)
+  escalatedAt    DateTime?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site         Site?          @relation(fields: [siteId], references: [id])
+  audit        Audit?         @relation(fields: [auditId], references: [id])
+  createdBy    User           @relation("IssueCreator", fields: [createdById], references: [id])
+  assignedTo   User?          @relation("IssueAssignee", fields: [assignedToId], references: [id])
+  comments     IssueComment[]
+  media        IssueMedia[]
+
+  @@map("issues")
+}
+
+model IssueComment {
+  id        String   @id @default(cuid())
+  issueId   String
+  userId    String
+  content   String
+  isInternal Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@map("issue_comments")
+}
+
+model IssueMedia {
+  id        String   @id @default(cuid())
+  issueId   String
+  type      String   // photo, document
+  url       String
+  filename  String?
+  caption   String?
+  stage     String   @default("initial") // initial, resolution, verification
+  createdAt DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@map("issue_media")
+}
+
+// ============================================
+// DAILY LOGS
+// ============================================
+
+model LogTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  type           String   // temperature, cleaning, opening, closing, receiving, etc.
+  frequency      String   @default("daily") // hourly, daily, weekly, monthly
+  isActive       Boolean  @default(true)
+  fields         Json     // Array of field definitions
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entries      LogEntry[]
+
+  @@map("log_templates")
+}
+
+model LogEntry {
+  id             String    @id @default(cuid())
+  organizationId String
+  templateId     String
+  siteId         String?
+  userId         String
+
+  date           DateTime  @default(now())
+  shift          String?   // morning, afternoon, evening, night
+  status         String    @default("complete") // complete, partial, exception
+  notes          String?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template     LogTemplate   @relation(fields: [templateId], references: [id])
+  site         Site?         @relation(fields: [siteId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+  readings     LogReading[]
+
+  @@map("log_entries")
+}
+
+model LogReading {
+  id          String   @id @default(cuid())
+  entryId     String
+  assetId     String?
+  fieldName   String
+  value       String
+  numericValue Float?
+  isException Boolean  @default(false)
+  exceptionNote String?
+  recordedAt  DateTime @default(now())
+
+  entry LogEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  asset Asset?   @relation(fields: [assetId], references: [id])
+
+  @@map("log_readings")
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id             String    @id @default(cuid())
+  organizationId String
+  userId         String
+  type           String    // audit_due, issue_assigned, issue_escalated, etc.
+  title          String
+  message        String
+  link           String?
+  isRead         Boolean   @default(false)
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id             String   @id @default(cuid())
+  userId         String
+  type           String   // Same types as Notification
+  email          Boolean  @default(true)
+  inApp          Boolean  @default(true)
+  push           Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@map("notification_preferences")
+}
