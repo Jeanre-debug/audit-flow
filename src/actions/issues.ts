@@ -287,3 +287,71 @@ export async function deleteIssue(id: string) {
     return { success: false, error: 'Failed to delete issue' }
   }
 }
+
+// Media upload/delete functions
+export async function uploadIssueMedia(
+  issueId: string,
+  data: {
+    base64: string
+    filename: string
+    mimeType: string
+    stage: 'initial' | 'resolution' | 'verification'
+    caption?: string
+  }
+) {
+  const { organization } = await requireOrganization()
+
+  // Verify issue belongs to organization
+  const issue = await prisma.issue.findFirst({
+    where: { id: issueId, organizationId: organization.id },
+  })
+
+  if (!issue) {
+    return { success: false, error: 'Issue not found' }
+  }
+
+  try {
+    // For now, store base64 directly (for production, use Supabase Storage)
+    await prisma.issueMedia.create({
+      data: {
+        issueId,
+        type: 'photo',
+        url: data.base64,
+        filename: data.filename,
+        caption: data.caption,
+        stage: data.stage,
+      },
+    })
+
+    revalidatePath(`/issues/${issueId}`)
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to upload media:', error)
+    return { success: false, error: 'Failed to upload image' }
+  }
+}
+
+export async function deleteIssueMedia(issueId: string, mediaId: string) {
+  const { organization } = await requireOrganization()
+
+  // Verify issue belongs to organization
+  const issue = await prisma.issue.findFirst({
+    where: { id: issueId, organizationId: organization.id },
+  })
+
+  if (!issue) {
+    return { success: false, error: 'Issue not found' }
+  }
+
+  try {
+    await prisma.issueMedia.delete({
+      where: { id: mediaId, issueId },
+    })
+
+    revalidatePath(`/issues/${issueId}`)
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to delete media:', error)
+    return { success: false, error: 'Failed to delete image' }
+  }
+}
