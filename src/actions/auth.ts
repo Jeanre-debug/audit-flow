@@ -165,9 +165,12 @@ export async function requireOrganization() {
     redirect('/onboarding')
   }
 
+  const membership = user.memberships[0]
+
   return {
     user,
-    organization: user.memberships[0].organization,
-    role: user.memberships[0].role,
+    organization: membership.organization,
+    membership,
+    role: membership.role,
   }
 }

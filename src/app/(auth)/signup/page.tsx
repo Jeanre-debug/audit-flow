@@ -1,71 +1,45 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2 } from 'lucide-react'
+import { Loader2, CheckCircle2 } from 'lucide-react'
+import { submitAccessRequest } from '@/actions/access-requests'
 
-export default function SignupPage() {
-  const router = useRouter()
+export default function RequestAccessPage() {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    password: '',
-    confirmPassword: '',
-    organizationName: '',
+    phone: '',
+    company: '',
+    message: '',
   })
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData(prev => ({
       ...prev,
       [e.target.name]: e.target.value
     }))
   }
 
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setLoading(true)
 
-    // Validation
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match')
-      setLoading(false)
-      return
-    }
-
-    if (formData.password.length < 8) {
-      setError('Password must be at least 8 characters')
-      setLoading(false)
-      return
-    }
-
     try {
-      const supabase = createClient()
+      const result = await submitAccessRequest(formData)
 
-      const { error: signUpError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            name: formData.name,
-            organization_name: formData.organizationName,
-          },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
-
-      if (signUpError) {
-        setError(signUpError.message)
+      if (!result.success) {
+        setError(result.error || 'Failed to submit request')
         return
       }
 
@@ -80,20 +54,23 @@ export default function SignupPage() {
   if (success) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle>Check your email</CardTitle>
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 w-12 h-12 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
+            <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
+          </div>
+          <CardTitle>Request Submitted</CardTitle>
           <CardDescription>
-            We&apos;ve sent you a confirmation link to {formData.email}
+            Thank you for your interest in AuditFlow
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="text-center">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Click the link in your email to verify your account and complete the signup process.
+            We&apos;ve received your access request. An administrator will review your request and create your account. You&apos;ll receive an email with login instructions once approved.
           </p>
         </CardContent>
         <CardFooter>
-          <Button variant="outline" className="w-full" onClick={() => router.push('/login')}>
-            Return to Sign In
+          <Button variant="outline" className="w-full" asChild>
+            <Link href="/login">Return to Sign In</Link>
           </Button>
         </CardFooter>
       </Card>
@@ -103,12 +80,12 @@ export default function SignupPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Create an Account</CardTitle>
+        <CardTitle>Request Access</CardTitle>
         <CardDescription>
-          Start your free trial - no credit card required
+          Submit your details and an administrator will create your account
         </CardDescription>
       </CardHeader>
-      <form onSubmit={handleSignup}>
+      <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
           {error && (
             <Alert variant="destructive">
@@ -116,7 +93,7 @@ export default function SignupPage() {
             </Alert>
           )}
           <div className="space-y-2">
-            <Label htmlFor="name">Full Name</Label>
+            <Label htmlFor="name">Full Name *</Label>
             <Input
               id="name"
               name="name"
@@ -129,20 +106,7 @@ export default function SignupPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="organizationName">Organization Name</Label>
-            <Input
-              id="organizationName"
-              name="organizationName"
-              type="text"
-              placeholder="Your Restaurant or Company"
-              value={formData.organizationName}
-              onChange={handleChange}
-              required
-              disabled={loading}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Email *</Label>
             <Input
               id="email"
               name="email"
@@ -155,36 +119,46 @@ export default function SignupPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="phone">Phone Number</Label>
             <Input
-              id="password"
-              name="password"
-              type="password"
-              placeholder="At least 8 characters"
-              value={formData.password}
+              id="phone"
+              name="phone"
+              type="tel"
+              placeholder="+1 (555) 000-0000"
+              value={formData.phone}
               onChange={handleChange}
-              required
               disabled={loading}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm Password</Label>
+            <Label htmlFor="company">Company / Organization</Label>
             <Input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              placeholder="Confirm your password"
-              value={formData.confirmPassword}
+              id="company"
+              name="company"
+              type="text"
+              placeholder="Your Restaurant or Company"
+              value={formData.company}
               onChange={handleChange}
-              required
               disabled={loading}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="message">Message (optional)</Label>
+            <Textarea
+              id="message"
+              name="message"
+              placeholder="Tell us about your needs..."
+              value={formData.message}
+              onChange={handleChange}
+              disabled={loading}
+              rows={3}
             />
           </div>
         </CardContent>
         <CardFooter className="flex flex-col space-y-4">
           <Button type="submit" className="w-full" disabled={loading}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create Account
+            Submit Request
           </Button>
           <p className="text-sm text-center text-gray-600 dark:text-gray-400">
             Already have an account?{' '}

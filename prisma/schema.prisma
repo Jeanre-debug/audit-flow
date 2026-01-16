@@ -530,3 +530,24 @@ model NotificationPreference {
   @@unique([userId, type])
   @@map("notification_preferences")
 }
+
+// ============================================
+// ACCESS REQUESTS
+// ============================================
+
+model AccessRequest {
+  id             String    @id @default(cuid())
+  name           String
+  email          String
+  phone          String?
+  company        String?
+  message        String?
+  status         String    @default("pending") // pending, approved, rejected
+  reviewedAt     DateTime?
+  reviewedById   String?
+  reviewNotes    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("access_requests")
+}
