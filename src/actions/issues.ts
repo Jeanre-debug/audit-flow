@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireOrganization } from './auth'
+import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 
 const issueSchema = z.object({
@@ -311,15 +312,44 @@ export async function uploadIssueMedia(
   }
 
   try {
-    // For now, store base64 directly (for production, use Supabase Storage)
+    const supabase = await createClient()
+
+    // Convert base64 to buffer
+    const base64Data = data.base64.replace(/^data:image\/\w+;base64,/, '')
+    const buffer = Buffer.from(base64Data, 'base64')
+
+    // Generate unique filename
+    const ext = data.filename.split('.').pop() || 'jpg'
+    const uniqueFilename = `${organization.id}/${issueId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`
+
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from('audit-photos')
+      .upload(uniqueFilename, buffer, {
+        contentType: data.mimeType,
+        upsert: false,
+      })
+
+    if (uploadError) {
+      console.error('Storage upload error:', uploadError)
+      return { success: false, error: 'Failed to upload image to storage' }
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('audit-photos')
+      .getPublicUrl(uniqueFilename)
+
+    // Save to database with storage URL
     await prisma.issueMedia.create({
       data: {
         issueId,
         type: 'photo',
-        url: data.base64,
+        url: urlData.publicUrl,
         filename: data.filename,
         caption: data.caption,
         stage: data.stage,
+        storagePath: uniqueFilename,
       },
     })
 
@@ -344,6 +374,18 @@ export async function deleteIssueMedia(issueId: string, mediaId: string) {
   }
 
   try {
+    // Get media record to find storage path
+    const media = await prisma.issueMedia.findUnique({
+      where: { id: mediaId },
+    })
+
+    if (media?.storagePath) {
+      // Delete from Supabase Storage
+      const supabase = await createClient()
+      await supabase.storage.from('audit-photos').remove([media.storagePath])
+    }
+
+    // Delete from database
     await prisma.issueMedia.delete({
       where: { id: mediaId, issueId },
     })
