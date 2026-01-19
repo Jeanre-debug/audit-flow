@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-
+// This page is handled by rewrite to /landing.html in next.config.ts
 export default function Home() {
-  redirect("/landing.html");
+  return null;
 }
