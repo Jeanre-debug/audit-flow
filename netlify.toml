@@ -1,16 +1,6 @@
 [build]
   publish = "."
-  command = "echo 'Static site - no build needed'"
-  ignore = "exit 0"
-
-[build.environment]
-  NODE_VERSION = "18"
-
-# Disable any plugins
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
-  [plugins.inputs]
-    enabled = false
+  command = "echo 'Static site'"
 
 [[redirects]]
   from = "/*"
